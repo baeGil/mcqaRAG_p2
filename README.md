@@ -34,8 +34,7 @@ src/
 ├── agent.py      # Main RAG agent implementation
 ├── index.py      # Indexing and document processing
 ├── milvus_store.py   # Vector store management
-├── config.py     # Configuration management
-└── ui.py         # User interface components
+└── config.py     # Configuration management
 ```
 
 ## Prerequisites
@@ -48,8 +47,7 @@ src/
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/rag-multimodal.git
-cd rag-multimodal
+git clone https://github.com/baeGil/mcqaRAG_p2.git
 ```
 
 2. Start Milvus and related services:
