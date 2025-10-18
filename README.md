@@ -31,10 +31,10 @@ A sophisticated Retrieval-Augmented Generation (RAG) system with multimodal supp
 
 ```
 src/
-├── agent.py      # Main RAG agent implementation
-├── index.py      # Indexing and document processing
+├── agent.py          # Main RAG agent implementation
+├── index.py          # Indexing and document processing
 ├── milvus_store.py   # Vector store management
-└── config.py     # Configuration management
+└── config.py         # Configuration management
 ```
 
 ## Prerequisites
