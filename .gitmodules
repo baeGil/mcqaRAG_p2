@@ -1,7 +1,0 @@
-[submodule "docling"]
-	path = docling
-	url = https://github.com/docling-project/docling.git
-
-[submodule "docling-core"]
-	path = docling-core
-	url = https://github.com/docling-project/docling-core.git
