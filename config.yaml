@@ -2,11 +2,17 @@
 
 # Model Configuration
 model:
-  text_generation: "gpt-4.1-mini"  # OpenAI model for text generation
-  embeddings: "text-embedding-3-small"  # OpenAI model for embeddings
-  tokenizer: "sentence-transformers/all-MiniLM-L6-v2"  # Hugging Face model for tokenization
-  url: "https://api.openai.com/v1/chat/completions"
+  # LLM chat model, model chính, tạo phản hồi, chấm điểm, gọi tools 
+  text_generation: "qwen3:1.7b"
+  # Embedding model 
+  embeddings: "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+  # Embedding tokenizer
+  tokenizer: "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+  # Base URL trỏ tới Ollama OpenAI-compatible API
+  url: "http://localhost:11434/v1"
   timeout: 60
+  # Model để tạo picture description
+  vision_model: "granite3.2-vision:latest"
 
 # Docling Document Processing
 document:
@@ -15,16 +21,18 @@ document:
   doc_dir: "doc_sources"  # Directory containing document sources
   supported_file_types: [".pdf"]  # List of supported file extensions
   picture_description:
-    prompt_picture_description: "Describe this image in sentences in a single paragraph."
+    # Bật/tắt chức năng picture description. Khi false, pipeline sẽ không gọi remote API
+    enabled: true
+    prompt_picture_description: "Miêu tả chi tiết hình ảnh sau bằng một đoạn văn."
 
 # Vector Database Configuration
 database:
   uri: "http://localhost:19530"  # Milvus database URI
-  name: "rag_multimodal"  # Database name
-  collection_name: "collection_demo"  # Collection name
-  namespace: "CaseDoneDemo"  # Namespace for partitioning data
+  name: "gil"  # Database name
+  collection_name: "multimodal_rag"  # Collection name
+  # namespace: "viettel"  # Namespace for partitioning data
 
 # Retrieval Configuration
 retrieval:
-  k: 2  # Number of documents to retrieve
-  weights: [0.6, 0.4]  # Weights for hybrid search (dense, sparse)
+  k: 3  # Number of documents to retrieve
+  weights: [0.7, 0.3]  # Weights for hybrid search (dense, sparse)

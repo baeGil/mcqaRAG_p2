@@ -28,7 +28,7 @@ from typing import List, Dict, Any, Optional, Union
 from src.config import config
 
 # Import vector store libraries
-from langchain_openai import OpenAIEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_milvus import BM25BuiltInFunction, Milvus
 from pymilvus import Collection, MilvusException, connections, db, utility
 from langchain_core.documents import Document
@@ -89,22 +89,30 @@ def configure_logging(level=logging.INFO, log_file=None):
 configure_logging(log_file=DEFAULT_LOG_FILE)
 
 
-def drop_collection(collection_name: str, db_name: str) -> bool:
+def drop_collection(collection_name: str, db_name: str, uri: str = None, token: str = None) -> bool:
     """
     Drop a collection from the specified database.
     
     Args:
         collection_name: Name of the collection to drop
         db_name: Name of the database containing the collection
+        uri: Milvus uri
+        token: Authentication token (optional, uses config if not provided)
         
     Returns:
         bool: True if collection was successfully dropped, False otherwise
     """
     try:
+        # Connect if URI and token are provided
+        if uri and token:
+            host = uri.split("://")[1].split(":")[0]
+            port = int(uri.split(":")[-1])
+            connections.connect(host=host, port=port)
+        
         # Check if the database exists
         existing_databases = db.list_database()
         if db_name not in existing_databases:
-            logger.warning(f"Database '{db_name}' does not exist.")
+            logger.warning(f"Database '{db_name}' không tồn tại.")
             return False
         
         # Switch to the specified database
@@ -113,41 +121,49 @@ def drop_collection(collection_name: str, db_name: str) -> bool:
         # Check if the collection exists
         collections = utility.list_collections()
         if collection_name not in collections:
-            logger.warning(f"Collection '{collection_name}' does not exist in database '{db_name}'.")
+            logger.warning(f"Collection '{collection_name}' không tồn tại trong database '{db_name}'.")
             return False
         
         # Drop the collection
         collection = Collection(name=collection_name)
         collection.drop()
-        logger.info(f"Collection '{collection_name}' has been dropped from database '{db_name}'.")
+        logger.info(f"Collection '{collection_name}' đã bị xoá khỏi database '{db_name}'.")
         return True
         
     except MilvusException as e:
-        logger.error(f"Error dropping collection: {e}")
+        logger.error(f"Xảy ra lỗi trong quá trình xoá collection: {e}")
         return False
 
 
-def drop_all_collections(db_name: str, confirm: bool = False) -> bool:
+def drop_all_collections(db_name: str, confirm: bool = False, uri: str = None, token: str = None) -> bool:
     """
     Drop all collections in a database.
     
     Args:
         db_name: Name of the database containing the collections
         confirm: Set to True to confirm the operation (defaults to False)
+        uri: Milvus uri
+        token: Authentication token (optional, uses config if not provided)
         
     Returns:
         bool: True if all collections were successfully dropped, False otherwise
     """
     if not confirm:
-        logger.warning(f"WARNING: You are about to drop all collections in database '{db_name}'")
-        logger.warning("This operation is irreversible. Set confirm=True to proceed.")
+        logger.warning(f"WARNING: Bạn chuẩn bị xoá toàn bộ collections trong database '{db_name}'")
+        logger.warning("Hành động này không thể thu hồi. Đặt confirm=True để tiến hành.")
         return False
     
     try:
+        # Connect if URI and token are provided
+        if uri and token:
+            host = uri.split("://")[1].split(":")[0]
+            port = int(uri.split(":")[-1])
+            connections.connect(host=host, port=port)
+        
         # Check if the database exists
         existing_databases = db.list_database()
         if db_name not in existing_databases:
-            logger.warning(f"Database '{db_name}' does not exist.")
+            logger.warning(f"Database '{db_name}' không tồn tại.")
             return False
         
         # Switch to the specified database
@@ -160,7 +176,7 @@ def drop_all_collections(db_name: str, confirm: bool = False) -> bool:
         # Drop each collection
         for collection_name in collections:
             logger.info(f"Dropping collection '{collection_name}'...")
-            success = drop_collection(collection_name=collection_name, db_name=db_name)
+            success = drop_collection(collection_name=collection_name, db_name=db_name, uri=uri, token=token)
             if not success:
                 logger.error(f"Failed to drop collection '{collection_name}'")
                 return False
@@ -173,13 +189,15 @@ def drop_all_collections(db_name: str, confirm: bool = False) -> bool:
         return False
 
 
-def drop_database(db_name: str, confirm: bool = False) -> bool:
+def drop_database(db_name: str, confirm: bool = False, uri: str = None, token: str = None) -> bool:
     """
     Drop a database and all its collections.
     
     Args:
         db_name: Name of the database to drop
         confirm: Set to True to confirm the operation (defaults to False)
+        uri: Milvus uri
+        token: Authentication token (optional, uses config if not provided)
         
     Returns:
         bool: True if database was successfully dropped, False otherwise
@@ -190,6 +208,12 @@ def drop_database(db_name: str, confirm: bool = False) -> bool:
         return False
     
     try:
+        # Connect if URI and token are provided
+        if uri and token:
+            host = uri.split("://")[1].split(":")[0]
+            port = int(uri.split(":")[-1])
+            connections.connect(host=host, port=port)
+        
         # Check if the database exists
         existing_databases = db.list_database()
         if db_name not in existing_databases:
@@ -197,7 +221,7 @@ def drop_database(db_name: str, confirm: bool = False) -> bool:
             return False
         
         # First drop all collections in the database
-        if not drop_all_collections(db_name, confirm=True):
+        if not drop_all_collections(db_name, confirm=True, uri=uri, token=token):
             logger.error(f"Failed to drop all collections in database '{db_name}'")
             return False
         
@@ -242,7 +266,6 @@ class MilvusStore:
         db_name: str = None,
         collection_name: str = None,
         embed_model: str = None,
-        api_key: str = None,
         drop_old: bool = False,
         namespace: str = None
     ):
@@ -254,16 +277,17 @@ class MilvusStore:
             db_name: Name of the database (defaults to config.get("database", "name"))
             collection_name: Name of the collection (defaults to config.get("database", "collection_name"))
             embed_model: Embedding model to use (defaults to config.get("model", "embeddings"))
-            api_key: OpenAI API key (defaults to os.environ.get("OPENAI_API_KEY"))
             drop_old: Whether to drop the existing collection if it exists
             namespace: Default namespace to use for documents (defaults to config.get("database", "namespace"))
+            
         """
+        # Local Milvus connection only
         self.uri = uri or config.get("database", "uri", default="http://localhost:19530")
-        self.db_name = db_name or config.get("database", "name", default="rag_multimodal")
-        self.collection_name = collection_name or config.get("database", "collection_name", default="collection_demo")
-        self.embed_model = embed_model or config.get("model", "embeddings", default="text-embedding-3-small")
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
-        self.namespace = namespace or config.get("database", "namespace", default="CaseDoneDemo")
+        
+        self.db_name = db_name or config.get("database", "name", default="gil")
+        self.collection_name = collection_name or config.get("database", "collection_name", default="multimodal_rag")
+        self.embed_model = embed_model or config.get("model", "embeddings", default="sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
+        self.namespace = namespace or config.get("database", "namespace", default="viettel")
         
         # Connect to Milvus
         self._connect_to_milvus()
@@ -271,19 +295,17 @@ class MilvusStore:
         # Initialize the database
         self._initialize_vector_store(drop_old=drop_old)
         
-        # Create embeddings model
-        self.embeddings_model = OpenAIEmbeddings(
-            model=self.embed_model,
-            api_key=self.api_key
-        )
+        # Create embeddings model (Sentence-Transformers)
+        self.embeddings_model = HuggingFaceEmbeddings(model_name=self.embed_model)
         
         # Create vector store
         self.vector_store = self._create_vector_store(drop_old=drop_old)
     
     def _connect_to_milvus(self) -> None:
         """
-        Connect to Milvus server.
+        Connect to Milvus server 
         """
+        # Local Milvus connection
         host = self.uri.split("://")[1].split(":")[0]
         port = int(self.uri.split(":")[-1])
         connections.connect(host=host, port=port)
@@ -330,6 +352,8 @@ class MilvusStore:
             "db_name": self.db_name
         }
         
+        # Local only; no token
+        
         # Create and return vector store
         return Milvus(
             embedding_function=self.embeddings_model,
@@ -365,35 +389,46 @@ class MilvusStore:
             logger.error(f"Error adding documents: {e}")
             return []
     
+    def _build_filter_expr(self, namespace: Optional[str] = None, source_normalized: Optional[str] = None) -> Optional[str]:
+        """
+        Tạo biểu thức filter Milvus từ namespace và source_normalized, đồng thời ghi log.
+        """
+        clauses = []
+        if namespace:
+            clauses.append(f'namespace == "{namespace}"')
+        if source_normalized:
+            clauses.append(f'source_normalized == "{source_normalized}"')
+        expr = " and ".join(clauses) if clauses else None
+        logger.info(f"[MilvusStore] Built filter expr: {expr}")
+        return expr
+
     def as_retriever(
         self, 
-        k: int = 4, 
+        k: int = 3, 
         namespace: str = None,
         ranker_type: str = "weighted",
-        ranker_weights: List[float] = None
+        ranker_weights: List[float] = None,
+        mmr: bool = True,
+        fetch_k: int = 12,
+        source_normalized: Optional[str] = None
     ) -> BaseRetriever:
         """
-        Create a retriever from the vector store.
-        
-        Args:
-            k: Number of documents to retrieve
-            namespace: Namespace to filter by (defaults to self.namespace)
-            ranker_type: Type of ranker to use (default: "weighted")
-            ranker_weights: Weights for the ranker (default: [0.6, 0.4])
-            
-        Returns:
-            BaseRetriever: Configured retriever
+        Tạo retriever áp dụng filter theo namespace/source_normalized nếu cung cấp.
+        Lưu ý: retriever dùng expr cố định (không fallback cho từng query).
         """
         namespace = namespace or self.namespace
         ranker_weights = ranker_weights or [0.6, 0.4]
-        
+
+        expr = self._build_filter_expr(namespace=namespace, source_normalized=source_normalized)
         search_kwargs = {
-            "k": k
+            "k": k,
+            "mmr": mmr,
+            "fetch_k": fetch_k
         }
-        
-        if namespace:
-            search_kwargs["expr"] = f'namespace == "{namespace}"'
-        
+        if expr:
+            search_kwargs["expr"] = expr
+            logger.info(f"[MilvusStore] as_retriever expr={expr}, k={k}, fetch_k={fetch_k}")
+
         return self.vector_store.as_retriever(
             search_kwargs=search_kwargs,
             ranker_type=ranker_type,
@@ -404,7 +439,9 @@ class MilvusStore:
         self, 
         query: str, 
         k: int = 4, 
-        namespace: str = None
+        namespace: str = None,
+        source: str = None,
+        source_normalized: str = None
     ) -> List[Document]:
         """
         Perform a similarity search.
@@ -418,22 +455,28 @@ class MilvusStore:
             List[Document]: List of similar documents
         """
         namespace = namespace or self.namespace
-        
-        filter_expr = None
-        if namespace:
-            filter_expr = f'namespace == "{namespace}"'
-        
-        return self.vector_store.similarity_search(
-            query,
-            k=k,
-            expr=filter_expr
-        )
+
+        # Thử expr chặt (namespace + source_normalized)
+        expr_strict = self._build_filter_expr(namespace=namespace, source_normalized=source_normalized)
+        logger.info(f"[MilvusStore] similarity_search expr_strict={expr_strict}, k={k}")
+        results = self.vector_store.similarity_search(query, k=k, expr=expr_strict)
+
+        # Fallback: nếu có hint nhưng 0 kết quả, nới lỏng còn namespace (hoặc toàn bộ nếu không có namespace)
+        if not results and source_normalized:
+            expr_relax = self._build_filter_expr(namespace=namespace, source_normalized=None)
+            logger.info(f"[MilvusStore] similarity_search fallback expr_relax={expr_relax}")
+            results = self.vector_store.similarity_search(query, k=k, expr=expr_relax)
+
+        logger.info(f"[MilvusStore] similarity_search returned {len(results)} results")
+        return results
     
     def similarity_search_with_score(
         self, 
         query: str, 
         k: int = 4, 
-        namespace: str = None
+        namespace: str = None,
+        source: str = None,
+        source_normalized: str = None
     ) -> List[tuple]:
         """
         Perform a similarity search with scores.
@@ -447,16 +490,20 @@ class MilvusStore:
             List[tuple]: List of (document, score) tuples
         """
         namespace = namespace or self.namespace
-        
-        filter_expr = None
-        if namespace:
-            filter_expr = f'namespace == "{namespace}"'
-        
-        return self.vector_store.similarity_search_with_score(
-            query,
-            k=k,
-            expr=filter_expr
-        )
+
+        # Thử expr chặt (namespace + source_normalized)
+        expr_strict = self._build_filter_expr(namespace=namespace, source_normalized=source_normalized)
+        logger.info(f"[MilvusStore] similarity_search_with_score expr_strict={expr_strict}, k={k}")
+        results = self.vector_store.similarity_search_with_score(query, k=k, expr=expr_strict)
+
+        # Fallback: nếu có hint nhưng 0 kết quả, nới lỏng còn namespace (hoặc toàn bộ nếu không có namespace)
+        if not results and source_normalized:
+            expr_relax = self._build_filter_expr(namespace=namespace, source_normalized=None)
+            logger.info(f"[MilvusStore] similarity_search_with_score fallback expr_relax={expr_relax}")
+            results = self.vector_store.similarity_search_with_score(query, k=k, expr=expr_relax)
+
+        logger.info(f"[MilvusStore] similarity_search_with_score returned {len(results)} results")
+        return results
     
     @staticmethod
     def set_log_level(level=logging.INFO, log_file=None):
@@ -493,7 +540,7 @@ class MilvusStore:
         collection_name = collection_name or self.collection_name
         db_name = db_name or self.db_name
         
-        return drop_collection(collection_name, db_name)
+        return drop_collection(collection_name, db_name, self.uri, self.token)
     
     def drop_all_collections(self, db_name: str = None, confirm: bool = False) -> bool:
         """
@@ -508,7 +555,7 @@ class MilvusStore:
         """
         db_name = db_name or self.db_name
         
-        return drop_all_collections(db_name, confirm)
+        return drop_all_collections(db_name, confirm, self.uri, self.token)
     
     def drop_database(self, db_name: str = None, confirm: bool = False) -> bool:
         """
@@ -523,6 +570,4 @@ class MilvusStore:
         """
         db_name = db_name or self.db_name
         
-        return drop_database(db_name, confirm)
-    
-
+        return drop_database(db_name, confirm, self.uri, self.token)

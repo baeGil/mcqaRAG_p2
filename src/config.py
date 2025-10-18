@@ -30,7 +30,7 @@ import os
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional, Union
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 
 class ConfigLoader:
     """Configuration loader for RAG Multimodal application"""
@@ -48,9 +48,9 @@ class ConfigLoader:
     
     def _load_config(self, config_path: Optional[Union[str, Path]] = None):
         """Load configuration from YAML file and environment variables"""
-        # Load environment variables
-        env_path = Path(__file__).parent.parent / ".env"
-        load_dotenv(env_path)
+        # # Load environment variables
+        # env_path = Path(__file__).parent.parent / ".env"
+        # load_dotenv(env_path)
         
         # Determine config file path
         if config_path:
@@ -166,11 +166,10 @@ class ConfigLoader:
         return self._allow_new_keys
     
     def get_milvus_connection_args(self) -> Dict[str, str]:
-        """Get Milvus connection arguments"""
+        """Get Milvus connection arguments (local docker-compose)."""
         return {
             "uri": self.get("database", "uri", default="http://localhost:19530"),
-            "token": self.get("database", "token", default="root:Milvus"),
-            "db_name": self.get("database", "name", default="rag_multimodal")
+            "db_name": self.get("database", "name", default="gil")
         }
     
     def get_pdf_pipeline_options(self) -> Dict[str, Any]:
@@ -180,29 +179,44 @@ class ConfigLoader:
             PictureDescriptionApiOptions
         )
         
-        # Get API configuration
-        openai_api_key = os.environ.get("OPENAI_API_KEY", "")
-        model_url = self.get("model", "url", default="https://api.openai.com/v1/chat/completions")
-        model_name = self.get("model", "text_generation", default="gpt-4.1-mini")
+        # Get API configuration (Ollama OpenAI-compatible or disabled)
+        base_url = self.get("model", "url", default="http://localhost:11434/v1")
+        model_name = self.get("model", "text_generation", default="")
+        vision_model = self.get("model", "vision_model", default="")
         model_timeout = self.get("model", "timeout", default=60)
         picture_prompt = self.get("document", "picture_description", "prompt_picture_description", 
                                 default="Describe this image in sentences in a single paragraph.")
+        pd_enabled = bool(self.get("document", "picture_description", "enabled", default=True))
         image_scale = self.get("document", "image_resolution_scale", default=2)
-        
+
+        # Nếu tắt picture description, không cấu hình remote API
+        if not pd_enabled:
+            return PdfPipelineOptions(
+                images_scale=image_scale,
+                generate_picture_images=False,
+                do_picture_description=False,
+                picture_description_options=None,
+                enable_remote_services=False,
+            )
+
+        # Dùng vision_model nếu có, fallback sang model_name
+        pd_model = vision_model if vision_model else model_name
+        headers = {}
+
         picture_desc_api_option = PictureDescriptionApiOptions(
-            url=model_url,
+            url=f"{base_url}/chat/completions" if not base_url.endswith("/chat/completions") and not base_url.endswith("/v1/chat/completions") else base_url,
             prompt=picture_prompt,
-            params={"model": model_name},
-            headers={"Authorization": f"Bearer {openai_api_key}"},
+            params={"model": pd_model},
+            headers=headers,
             timeout=model_timeout,
         )
-        
+
         return PdfPipelineOptions(
             images_scale=image_scale,
             generate_picture_images=True,
             do_picture_description=True,
             picture_description_options=picture_desc_api_option,
-            enable_remote_services=True,  # to access remote API
+            enable_remote_services=True,
         )
 
 # Create a default configuration instance

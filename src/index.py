@@ -39,6 +39,7 @@ Logging Features:
 """
 
 import os
+import re
 import copy
 import logging
 from pathlib import Path
@@ -253,7 +254,15 @@ def process_file(file_path: Union[str, Path], converter: DocumentConverter, chun
     for doc in docs:
         metadata = doc.metadata
         _metadata = dict()
+        # Original source path string
         _metadata["source"] = str(metadata["source"])
+        # Normalized source to improve matching (e.g., Public001.pdf vs Public_001)
+        try:
+            src_name = Path(_metadata["source"]).stem
+        except Exception:
+            src_name = str(_metadata["source"]).rsplit('.', 1)[0]
+        src_norm = re.sub(r"[^a-z0-9]", "", src_name.lower())
+        _metadata["source_normalized"] = src_norm
         _metadata["page_no"] = metadata["dl_meta"]['doc_items'][0]['prov'][0]['page_no']
         _metadata["namespace"] = namespace
         
@@ -287,7 +296,7 @@ def process_and_index_directory(
     
     # Use provided config or fall back to global config
     config_to_use = config if config else globals()['config']
-    namespace = namespace or config_to_use.get("database", "namespace", default="CaseDoneDemo")
+    namespace = namespace or config_to_use.get("database", "namespace", default="viettel")
     file_extensions = file_extensions or config_to_use.get("document", "supported_file_types", default=[".pdf"])
     
     if not directory_path.exists():
@@ -310,19 +319,21 @@ def process_and_index_directory(
     chunker = get_chunker(config=config)
     
     # Extract config values for MilvusStore
-    uri = config_to_use.get("database", "uri", default="http://localhost:19530")
-    db_name = config_to_use.get("database", "name", default="rag_multimodal")
-    collection_name = config_to_use.get("database", "collection_name", default="collection_demo")
-    embed_model = config_to_use.get("model", "embeddings", default="text-embedding-3-small")
+    db_name = config_to_use.get("database", "name", default="gil")
+    collection_name = config_to_use.get("database", "collection_name", default="multimodal_rag")
+    embed_model = config_to_use.get("model", "embeddings", default="sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
     
-    # Create vector store with explicit parameters
+    # Local Milvus connection
+    uri = config_to_use.get("database", "uri", default="http://localhost:19530")
+    token = config_to_use.get("database", "token", default="root:Milvus")
     milvus_store = MilvusStore(
         uri=uri,
         db_name=db_name,
         collection_name=collection_name,
         embed_model=embed_model,
         drop_old=drop_existing,
-        namespace=namespace
+        namespace=namespace,
+        token=token,
     )
     
     # Process and index each file
